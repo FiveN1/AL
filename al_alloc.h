@@ -1,4 +1,5 @@
 #ifndef AL_ALLOC_INCLUDED
+#define AL_ALLOC_INCLUDED
 
 /*
 	al_alloc - AL allocators
