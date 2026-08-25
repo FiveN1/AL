@@ -58,18 +58,38 @@ bool* alig_profiler_open();
 void alig_profiler_show_remaining_time(bool draw);
 #define AL_PROFILE_SCOPE(scope, name, color) { uint64_t t0 = stm_now(); scope; alig_profiler_push_time((float)stm_ms(stm_diff(stm_now(), t0)), (name), (color)); } 
 
+/*
+	alig_console
 
+	imgui console for logging messages and calling commands.
+
+*/
+
+// command callback. function arguments: (int arg_count. char* arguments[]). arguments is of size arg_count.
+typedef void(*alig_console_command_callback)(int, char*[]);
+
+void alig_console_init(bool is_open); // will init console with some basic commands
+void alig_console_set_log_color(uint32_t color); // set color for the next log
+void alig_console_log(const char* fmt, ...);
+void alig_console_log_unformatted(const char* message);
+void alig_console_exec(const char* command);
+void alig_console_add_command(const char* name, alig_console_command_callback callback);
+void alig_console_clear();
+void alig_console_draw(const char* name);
 
 #endif AL_IMGUI_INCLUDED
+#define AL_IMPL
 #ifdef AL_IMPL
 
 //
 // IMPLEMENTATION
 //
 
+#define AL_ARRAY_SIZE(_arr) ((int)(sizeof(_arr) / sizeof(*(_arr))))
+
 //
 // STYLE
-//
+// >>style
 
 void alig_set_style() {
 	ImVec4_c* colors = igGetStyle()->Colors;
@@ -100,7 +120,7 @@ void alig_set_style() {
 
 //
 // PROFILER
-//
+//>>profiler
 
 typedef struct _alig_profiler_task {
 	float time;
@@ -121,7 +141,7 @@ typedef struct _alig_profiler {
 	bool dont_draw_remaining_time;
 } _alig_profiler;
 
-static _alig_profiler _profiler;
+static _alig_profiler _profiler; // private instance of a profiler
 
 void alig_profiler_clear() {
 	_profiler.finished_task_stack = _profiler.task_stack; // measuring has finished, store the results for drawing. (note that finished_task_stack is one frame behind)
@@ -145,7 +165,7 @@ int alig_profiler_push_time(float time_ms, const char* name, uint32_t color) {
 	return task_index;
 }
 
-typedef struct alig_histogram_desc {
+typedef struct _alig_histogram_desc {
 	const char* name;
 	const char* overlay_text;
 	const ImVec2_c frame_size;
@@ -154,16 +174,16 @@ typedef struct alig_histogram_desc {
 	int history_offset;
 	float scale_min;
 	float scale_max;
-} alig_histogram_desc;
+} _alig_histogram_desc;
 
 // get dimensions in the y axis of a plot segment/task in normalised coordinates: 0.0f - 1.0f
-ImVec2_c _alig_calc_plot_dim(float base_y, float time_ms, float scale_min, float scale_max) {
+static ImVec2_c _alig_calc_plot_dim(float base_y, float time_ms, float scale_min, float scale_max) {
 	float plot_height = ((time_ms) / (scale_max - scale_min)); // task height in graph
 	ImVec2_c plot_y = (ImVec2_c){ base_y, base_y + plot_height };
 	return igImClamp(plot_y, (ImVec2_c) { 0.0f, 0.0f }, (ImVec2_c) { 1.0f, 1.0f }); // clamp in this range. plot_y will be later scaled to inner size
 }
 
-void _alig_profiler_draw_histogram(alig_histogram_desc* desc) {
+static void _alig_profiler_draw_histogram(_alig_histogram_desc* desc) {
 
 	// imgui data
 	const ImGuiStyle* style = igGetStyle();
@@ -326,13 +346,13 @@ void alig_profiler_draw(const char* name, ImVec2_c frame_size, float scale_min, 
 		snprintf(overlay, 32, "avg %0.3fms\nmax %0.3fms", average, maximum);
 
 		// draw histogram
-		_alig_profiler_draw_histogram(&(alig_histogram_desc) {
+		_alig_profiler_draw_histogram(&(_alig_histogram_desc) {
 			.name = name,
-				.overlay_text = overlay,
-				.frame_size = frame_size,
-				.tasks_history = tasks_history,
-				.history_count = AL_IG_PROFILER_HISTORY_COUNT,
-				.history_offset = histogram_offset,
+			.overlay_text = overlay,
+			.frame_size = frame_size,
+			.tasks_history = tasks_history,
+			.history_count = AL_IG_PROFILER_HISTORY_COUNT,
+			.history_offset = histogram_offset,
 			.scale_min = scale_min,
 			.scale_max = scale_max,
 		});
@@ -347,6 +367,252 @@ bool* alig_profiler_open() {
 
 void alig_profiler_show_remaining_time(bool draw) {
 	_profiler.dont_draw_remaining_time = !draw;
+}
+
+//
+// CONSOLE
+// >>console
+
+enum {
+	AL_IG_MAX_LOG_ITEMS = 256,
+	AL_IG_MAX_LOG_CHARACTERS = 4096,
+	AL_IG_MAX_COMMANDS = 256,
+	AL_IG_MAX_COMMAND_ARGUMENTS = 64
+};
+
+typedef struct _alig_console_log_item {
+	uint32_t color;	// color of log item formated as 0xAABBGGRR
+	int log_index;	// index to log in the log_buff
+} _alig_console_log_item;
+
+typedef struct _alig_console_log_items {
+	_alig_console_log_item data[AL_IG_MAX_LOG_ITEMS];
+	int count;
+} _alig_console_log_items;
+
+typedef struct _alig_console_logs {
+	char data[AL_IG_MAX_LOG_CHARACTERS];	// buffer with all of the messages
+	int count;								// used characters count
+} _alig_console_logs;
+
+typedef struct _alig_console_command {
+	char name[256];
+	alig_console_command_callback callback; // command callback called on exec
+} _alig_console_command;
+
+typedef struct _alig_console_commands {
+	_alig_console_command data[AL_IG_MAX_COMMANDS];
+	int count;
+} _alig_console_commands;
+
+typedef struct _alig_console_command_arguments {
+	char* pointers[AL_IG_MAX_COMMAND_ARGUMENTS];	// pointers to arguments in data buffer (this is the char* args[])
+	char data[AL_IG_MAX_COMMAND_ARGUMENTS][256];	// argument buffer
+	int count;										// argument count (this is the int arg_count)
+} _alig_console_command_arguments;
+
+typedef struct _alig_console {
+	_alig_console_log_items log_items;				// data about seperate text instances, i.e. colors & ptrs to strings in log buffer, of seperate text instances
+	_alig_console_logs logs;						// log item data, all of the strings are stored here
+	_alig_console_commands commands;				// data about added commands
+	_alig_console_command_arguments command_args;	// command argument data for when calling exec()
+	char input_buff[256];							// text input section buffer
+	uint32_t next_log_color;
+	bool scroll_to_bottom;
+	bool is_open;				
+} _alig_console;
+
+static _alig_console _console; // private instance
+
+static void _alig_console_help_command(int arg_count, char* args[]) {
+	alig_console_log_unformatted("list of available commands:");
+	for (int i = 0; i < _console.commands.count; i++) {
+		_alig_console_command* command = &_console.commands.data[i];
+		char buff[256];
+		snprintf(buff, sizeof(buff), "- %s", command->name);
+		alig_console_log_unformatted(buff);
+	}
+}
+
+static void _alig_console_clear_command(int arg_count, char* args[]) {
+	alig_console_clear();
+}
+
+static void _alig_console_stats_command(int arg_count, char* args[]) {
+	alig_console_log_unformatted("console stats:");
+	alig_console_log("- log items: %i/%i", _console.log_items.count, AL_ARRAY_SIZE(_console.log_items.data));
+	alig_console_log("- log buffer: %i/%i", _console.logs.count, AL_ARRAY_SIZE(_console.logs.data));
+	alig_console_log("- commands: %i/%i", _console.commands.count, AL_ARRAY_SIZE(_console.commands.data));
+}
+
+void alig_console_init(bool is_open) {
+	_console.is_open = is_open;
+	_console.next_log_color = AL_IG_COLOR_WHITE;
+	// add default log
+	alig_console_log_unformatted("type 'help' for a list of available commands");
+	// add default commands
+	alig_console_add_command("help", _alig_console_help_command);
+	alig_console_add_command("clear", _alig_console_clear_command);
+	alig_console_add_command("stats", _alig_console_stats_command);
+}
+
+void alig_console_set_log_color(uint32_t color) { // i like this split between the log and color function
+	_console.next_log_color = color;
+}
+
+void alig_console_log(const char* fmt, ...) {
+	// from: https://stackoverflow.com/questions/66094905/how-to-pass-a-formatted-string-as-a-single-argument-in-c
+	// determine required buffer size 
+	va_list args;
+	va_start(args, fmt);
+	int len = vsnprintf(NULL, 0, fmt, args);
+	va_end(args);
+	if (len < 0) return;
+	// format message
+	char message[256];
+	va_start(args, fmt);
+	vsnprintf(message, sizeof(message), fmt, args);
+	va_end(args);
+	// log
+	alig_console_log_unformatted(message);
+}
+
+void alig_console_log_unformatted(const char* message) {
+	int log_items_capacity = AL_ARRAY_SIZE(_console.log_items.data);
+	int log_buff_capacity = AL_ARRAY_SIZE(_console.logs.data);
+	// check if reached maximum capacity of any buffer, if yes then clear the whole console
+	if (_console.log_items.count >= log_items_capacity || _console.logs.count >= log_buff_capacity) {
+		alig_console_clear();
+	}
+	// add message (will be trimmed if it wount fint into the buffer)
+	int message_length = snprintf(&_console.logs.data[_console.logs.count], (size_t)(log_buff_capacity - _console.logs.count), "%s", message);
+	if (message_length == 0) return; // return if empty message (wont add any log items)
+	// add log item
+	_alig_console_log_item* log_item = &_console.log_items.data[_console.log_items.count++];
+	*log_item = (_alig_console_log_item){
+		.color = _console.next_log_color,
+		.log_index = _console.logs.count
+	};
+	// increment log buff index
+	_console.logs.count += message_length + 1; // +1 for the null terminator
+	// set next color to default
+	_console.next_log_color = AL_IG_COLOR_WHITE;
+}
+
+static void _alig_console_split_command(const char* command, int max_arg_count, int max_arg_size, char* out_arg_buff, int* out_arg_count, char* out_arg_ptrs[]) {
+	// loop until no arguments separated by spaces
+	char* arg_begin = command;
+	for (; (*out_arg_count) < max_arg_count; (*out_arg_count)++) {
+		// get argument size
+		char* arg_end = strchr(arg_begin, ' ');
+		size_t arg_size = 0;
+		if (arg_end == NULL) arg_size = strnlen(arg_begin, max_arg_size);
+		else arg_size = (size_t)(arg_end - arg_begin);
+		// check before proceeding to copy the argument
+		if (arg_size == 0 || arg_size >= max_arg_size) break;
+		// copy to arg buffer
+		char* arg_buff = &out_arg_buff[max_arg_size * (*out_arg_count)];
+		memcpy(arg_buff, arg_begin, arg_size);
+		arg_buff[arg_size] = '\0';
+		// add pointer
+		out_arg_ptrs[*out_arg_count] = arg_buff;
+		// increment (+1 for space) NOTE: commands with multiple spaces cause problems, or with spaces at the begining!!
+		arg_begin += arg_size + 1;
+	}
+}
+
+void alig_console_exec(const char* command) {
+	// reset argument count
+	_console.command_args.count = 0;
+	// split command into arguments separated by spaces
+	_alig_console_split_command(
+		command, 
+		AL_ARRAY_SIZE(_console.command_args.data), 
+		AL_ARRAY_SIZE(_console.command_args.data[0]), 
+		_console.command_args.data, 
+		&_console.command_args.count, 
+		_console.command_args.pointers
+	);
+	// check if command was valid (must have at least one argument)
+	if (_console.command_args.count == 0) {
+		alig_console_set_log_color(AL_IG_COLOR_YELLOW);
+		alig_console_log_unformatted("invalid command");
+		return;
+	}
+	// find command. NOTE: it would be great if the commands were sorted alphabetically so we could find them in log time
+	const char* called_command_name = _console.command_args.pointers[0]; // command name is always the first argument
+	for (int i = 0; i < _console.commands.count; i++) {
+		_alig_console_command* command = &_console.commands.data[i];
+		if (strcmp(command->name, called_command_name) == 0) {
+			command->callback(_console.command_args.count, _console.command_args.pointers); // call command
+			// scroll to bottom
+			_console.scroll_to_bottom = true;
+			return;
+		}
+	}
+	// if command not found
+	alig_console_set_log_color(AL_IG_COLOR_YELLOW);
+	alig_console_log_unformatted("command not found");
+}
+
+void alig_console_add_command(const char* name, alig_console_command_callback callback) {
+	if (_console.commands.count >= AL_ARRAY_SIZE(_console.commands.data)) return;
+	_alig_console_command* command = &_console.commands.data[_console.commands.count++];
+	snprintf(command->name, (size_t)AL_ARRAY_SIZE(command->name), "%s", name);
+	command->callback = callback;
+}
+
+void alig_console_clear() {
+	_console.log_items.count = 0;
+	_console.logs.count = 0;
+}
+
+void alig_console_draw(const char* name) {
+	if (!_console.is_open) {
+		return;
+	}
+
+	igSetNextWindowSize((ImVec2_c) { 480, 360 }, ImGuiCond_FirstUseEver);
+	igBegin(name, &_console.is_open, 0);
+
+	// display logs
+	const float footer_height_to_reserve = igGetStyle()->ItemSpacing.y + igGetFrameHeightWithSpacing();
+	if (igBeginChild_Str("ScrollingRegion", (ImVec2_c) { 0, -footer_height_to_reserve }, ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_HorizontalScrollbar)) {
+		igPushStyleVar_Vec2(ImGuiStyleVar_ItemSpacing, (ImVec2_c) { 4, 1 }); // Tighten spacing
+		for (int i = 0; i < _console.log_items.count; i++) {
+			_alig_console_log_item* log_item = &_console.log_items.data[i];
+			// render log item
+			igPushStyleColor_U32(ImGuiCol_Text, log_item->color);
+			igTextUnformatted(&_console.logs.data[log_item->log_index], NULL);
+			igPopStyleColor(1);
+		}
+		// scroll to bottom
+		if (_console.scroll_to_bottom || (igGetScrollY() >= igGetScrollMaxY())) {
+			igSetScrollHereY(1.0f);
+		}
+		_console.scroll_to_bottom = false;
+
+		igPopStyleVar(1);
+	}
+	igEndChild();
+	igSeparator();
+
+	// input section
+	bool reclaim_focus = false;
+	ImGuiInputTextFlags input_text_flags = ImGuiInputTextFlags_EnterReturnsTrue;
+	if (igInputText("Input", _console.input_buff, sizeof(_console.input_buff) / sizeof(*_console.input_buff), input_text_flags, NULL, NULL)) {
+		alig_console_set_log_color(AL_IG_COLOR_CYAN);
+		alig_console_log_unformatted(_console.input_buff);
+		alig_console_exec(_console.input_buff);
+		_console.input_buff[0] = '\0'; // clear input buffer
+		reclaim_focus = true;
+	}
+	igSetItemDefaultFocus();
+	if (reclaim_focus) {
+		igSetKeyboardFocusHere(-1); // auto focus previous widget
+	}
+		
+	igEnd();
 }
 
 #endif AL_IMPL
