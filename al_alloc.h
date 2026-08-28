@@ -235,7 +235,10 @@ uint64_t al_bit_pool_add(al_bit_pool* bit_pool) {
 }
 
 void al_bit_pool_remove(al_bit_pool* bit_pool, uint64_t index) {
-	if (index == 0) return; // cant deallocate invalid slot
+	if (index == 0) { // cant deallocate invalid slot
+		printf("WARN: al_bit_pool cant deallocate invalid id! %p\n", bit_pool);
+		return;
+	}
 	uint64_t* layer = _al_bit_pool_get_top_layer_ptr(bit_pool); // pointer to the highest layer
 	layer += bit_pool->_l0_offset; // offset to the lowest layer
 	uint64_t bit_index = 0;

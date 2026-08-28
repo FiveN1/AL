@@ -2,28 +2,30 @@
 #define AL_IMGUI_INCLUDED
 
 /*
-	(13.08.2026)
-	custom ImGui windows/tools
+	al_imgui.h - custom ImGui windows/tools
 
 	INCLUDE BEFORE:
 	- cimgui
 	- sokol_time.h
 	
+	CODE SECTIONS:
+	>>impl
+	>>style
+	>>profiler
+	>>console
 */
 
+typedef enum alig_colors { // colors formated as: 0xAABBGGRR
+	AL_IG_COLOR_RED		= 0xFF0000FF,
+	AL_IG_COLOR_GREEN	= 0xFF00FF00,
+	AL_IG_COLOR_BLUE	= 0xFFFF0000,
+	AL_IG_COLOR_YELLOW	= 0xFF00FFFF,
+	AL_IG_COLOR_CYAN	= 0xFFFFFF00,
+	AL_IG_COLOR_PINK	= 0xFFFF00FF,
+	AL_IG_COLOR_WHITE	= 0xFFFFFFFF
+} alig_colors;
 
-enum {
-	AL_IG_MAX_PROFILER_TASKS = 8,
-	AL_IG_PROFILER_HISTORY_COUNT = 32
-};
-
-/*
-	alig_style
-
-	custom imgui style
-
-*/
-
+// set custom imgui style
 void alig_set_style();
 
 /*
@@ -41,16 +43,6 @@ void alig_set_style();
 	inspired by: https://github.com/Raikiri/LegitProfiler
 */
 
-typedef enum alig_profiler_colors { // colors formated as: 0xAABBGGRR
-	AL_IG_COLOR_RED		= 0xFF0000FF,
-	AL_IG_COLOR_GREEN	= 0xFF00FF00,
-	AL_IG_COLOR_BLUE	= 0xFFFF0000,
-	AL_IG_COLOR_YELLOW	= 0xFF00FFFF,
-	AL_IG_COLOR_CYAN	= 0xFFFFFF00,
-	AL_IG_COLOR_PINK	= 0xFFFF00FF,
-	AL_IG_COLOR_WHITE	= 0xFFFFFFFF
-} alig_profiler_colors;
-
 void alig_profiler_clear();
 int alig_profiler_push_time(float time_ms, const char* name, uint32_t color);
 void alig_profiler_draw(const char* name, ImVec2_c frame_size, float scale_min, float scale_max);
@@ -62,7 +54,6 @@ void alig_profiler_show_remaining_time(bool draw);
 	alig_console
 
 	imgui console for logging messages and calling commands.
-
 */
 
 // command callback. function arguments: (int arg_count. char* arguments[]). arguments is of size arg_count.
@@ -83,7 +74,7 @@ void alig_console_draw(const char* name);
 
 //
 // IMPLEMENTATION
-//
+// >>impl
 
 #define AL_ARRAY_SIZE(_arr) ((int)(sizeof(_arr) / sizeof(*(_arr))))
 
@@ -122,6 +113,11 @@ void alig_set_style() {
 // PROFILER
 //>>profiler
 
+enum {
+	AL_IG_MAX_PROFILER_TASKS = 8,
+	AL_IG_PROFILER_HISTORY_COUNT = 32
+};
+
 typedef struct _alig_profiler_task {
 	float time;
 	const char* name;
@@ -154,7 +150,7 @@ void alig_profiler_clear() {
 int alig_profiler_push_time(float time_ms, const char* name, uint32_t color) {
 	if (_profiler.task_stack.count >= AL_IG_MAX_PROFILER_TASKS) {
 		printf("ERROR: alig_profiler_push_time reached maximim amount of tasks! make sure to clear all tasks every frame!\n");
-		return;
+		return 0;
 	}
 	int task_index = _profiler.task_stack.count++;
 	_profiler.task_stack.tasks[task_index] = (_alig_profiler_task){
@@ -226,7 +222,7 @@ static void _alig_profiler_draw_histogram(_alig_histogram_desc* desc) {
 	}
 
 	// draw frame
-	igRenderFrame(total_bb.Min, total_bb.Max, frame_bg_color, 0.0f, style->FrameRounding);
+	igRenderFrame(total_bb.Min, total_bb.Max, frame_bg_color, false, style->FrameRounding);
 
 	// draw plots
 	const float inner_width = inner_bb.Max.x - inner_bb.Min.x;
@@ -245,7 +241,7 @@ static void _alig_profiler_draw_histogram(_alig_histogram_desc* desc) {
 
 		// plot each task in task stack
 		for (int j = 0; j < task_stack->count; j++) { // for each task
-			_alig_profiler_task* task = &task_stack->tasks[j].time;
+			_alig_profiler_task* task = &task_stack->tasks[j];
 
 			// calc task graph size
 			ImVec2_c plot_y = _alig_calc_plot_dim(accumulated_height, task->time, desc->scale_min, desc->scale_max);
@@ -264,7 +260,7 @@ static void _alig_profiler_draw_histogram(_alig_histogram_desc* desc) {
 	float y_offset = 0.0f;
 	float accumulated_height = plot_base_height;
 	for (int i = 0; i < last_task_stack->count; i++) {
-		_alig_profiler_task* task = &last_task_stack->tasks[i].time;
+		_alig_profiler_task* task = &last_task_stack->tasks[i];
 		y_offset += font_size;
 		// draw text
 		char buff[128];
@@ -374,8 +370,8 @@ void alig_profiler_show_remaining_time(bool draw) {
 // >>console
 
 enum {
-	AL_IG_MAX_LOG_ITEMS = 256,
-	AL_IG_MAX_LOG_CHARACTERS = 4096,
+	AL_IG_MAX_LOG_ITEMS = 2048,
+	AL_IG_MAX_LOG_CHARACTERS = 65536,
 	AL_IG_MAX_COMMANDS = 256,
 	AL_IG_MAX_COMMAND_ARGUMENTS = 64
 };
@@ -498,10 +494,10 @@ void alig_console_log_unformatted(const char* message) {
 	// set next color to default
 	_console.next_log_color = AL_IG_COLOR_WHITE;
 }
-
+// split a command (sentance) by spaces into arguments (words)
 static void _alig_console_split_command(const char* command, int max_arg_count, int max_arg_size, char* out_arg_buff, int* out_arg_count, char* out_arg_ptrs[]) {
 	// loop until no arguments separated by spaces
-	char* arg_begin = command;
+	const char* arg_begin = command;
 	for (; (*out_arg_count) < max_arg_count; (*out_arg_count)++) {
 		// get argument size
 		char* arg_end = strchr(arg_begin, ' ');
@@ -512,8 +508,8 @@ static void _alig_console_split_command(const char* command, int max_arg_count, 
 		if (arg_size == 0 || arg_size >= max_arg_size) break;
 		// copy to arg buffer
 		char* arg_buff = &out_arg_buff[max_arg_size * (*out_arg_count)];
-		memcpy(arg_buff, arg_begin, arg_size);
-		arg_buff[arg_size] = '\0';
+		memcpy(arg_buff, arg_begin, arg_size); // this is safe since we perform a check before proceeding
+		arg_buff[arg_size] = '\0'; // null terminate argument
 		// add pointer
 		out_arg_ptrs[*out_arg_count] = arg_buff;
 		// increment (+1 for space) NOTE: commands with multiple spaces cause problems, or with spaces at the begining!!
@@ -571,7 +567,6 @@ void alig_console_draw(const char* name) {
 	if (!_console.is_open) {
 		return;
 	}
-
 	igSetNextWindowSize((ImVec2_c) { 480, 360 }, ImGuiCond_FirstUseEver);
 	igBegin(name, &_console.is_open, 0);
 
