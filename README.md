@@ -10,7 +10,7 @@ This codebase consists of many 'sub-libraries' mostly independent on each other.
 | File | About |
 | --- | --- |
 | [`al_alloc.h`](al_alloc.h) | Allocator implementations for easy memory management |
-| [`al_input.h`](al_input.h) | Polling-based input handler & custom key types. Compatible with sokol |
+| [`al_input.h`](al_input.h) | Polling-based input handler and custom key/button types. Compatible with sokol |
 | [`al_imgui.h`](al_imgui.h) | Debug ImGui windows, profiler, console |
 | [`al_sdf.h`](al_sdf.h) | Library for managing SDF primitives with incremental BVH and incremental update stack. Compatible with CPU and GPU compute. |
 
