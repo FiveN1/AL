@@ -14,5 +14,10 @@ This codebase consists of many 'sub-libraries' mostly independent on each other.
 | [`al_imgui.h`](al_imgui.h) | Debug ImGui windows, profiler, console |
 | [`al_sdf.h`](al_sdf.h) | Library for managing SDF primitives with incremental BVH and incremental update stack. Compatible with CPU and GPU compute. |
 
+## How to use?
+
+Include any of the libraries that you want to use in **only one** C or C++ translation unit with the `AL_IMPL` definition.
+Then simply include any of these headers in your project anywhere needed.
+
 ## Dependencies:
 Some of these libraries depend hevily on [Sokol](https://github.com/floooh/sokol), cimgui, vecmath.
