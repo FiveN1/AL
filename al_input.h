@@ -45,9 +45,6 @@
         al_input.mouse_position;
         al_input.mouse_delta;
         al_input.mouse_scroll_delta;
-
-    TODO:
-    - key modifiers in the al_input state?
 */
 
 typedef enum al_input_key_code { // all keys
@@ -219,7 +216,6 @@ void al_input_on_sokol_event(const sapp_event* event); // (put at very begining 
 void al_input_on_sokol_update(); // (put at very end of on_frame!) - some internal state has to be updated every frame.
 
 #endif AL_INPUT_INCLUDED
-//#define AL_IMPL
 #ifdef AL_IMPL 
 
 al_input_state al_input; // al_input state definition (not static since its public)
