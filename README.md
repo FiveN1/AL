@@ -13,6 +13,7 @@ This codebase consists of many 'sub-libraries' mostly independent on each other.
 | [`al_input.h`](al_input.h) | Polling-based input handler and custom key/button types. Compatible with sokol |
 | [`al_imgui.h`](al_imgui.h) | Debug ImGui windows, profiler, console |
 | [`al_sdf.h`](al_sdf.h) | Library for managing SDF primitives with incremental BVH and incremental update stack. Compatible with CPU and GPU compute. |
+| [`al_camera.h`](al_camera.h) | Simple camera implementation with fully customizable behavior |
 
 ## How to use?
 
